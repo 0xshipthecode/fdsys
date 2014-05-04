@@ -6,10 +6,11 @@ class Observation:
     An observation of a field value at a certain time.
     """
 
-    def __init__(self,lat,lon,obs,var,ngp):
+    def __init__(self,tm,lat,lon,obs,var,ngp):
         """
         Constructs an observation packet from the info dictionary.
         """
+        self.tm = tm
         self.lon = lon
         self.lat = lat
         self.obs_val = obs
@@ -44,3 +45,8 @@ class Observation:
         """
         return self.ngp
 
+    def get_time(self):
+        """
+        Return the GMT time of the observations.
+        """
+        return self.tm

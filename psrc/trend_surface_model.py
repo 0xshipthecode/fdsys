@@ -162,12 +162,6 @@ def fit_tsm(obs_data, X):
     # map computed betas to original (possibly extended) betas which include unused variables
     beta_ext = np.asmatrix(np.zeros((Nallcov,1)))
     beta_ext[nz_covs] = beta
-    diagnostics().push("s2_eta_hat", s2_eta_hat)
-    diagnostics().push("kriging_beta", beta_ext)
-    diagnostics().push("kriging_iters", iters)
-    diagnostics().push("kriging_rmse", np.mean(res2)**0.5)
-    diagnostics().push("kriging_subzero_s2_estimates", subzeros)
-#    diagnostics().push("kriging_cov_cond", np.linalg.cond(XtSX))
 
     for i in range(X.shape[0]):
         for j in range(X.shape[1]):
