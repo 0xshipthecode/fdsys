@@ -11,7 +11,7 @@ background guess.  Results in an analysis and new covariance.
 from trend_surface_model import fit_tsm
 from grid_moisture_model import GridMoistureModel
 from spatial_model_utilities import great_circle_distance, find_closest_grid_point
-from observations import Observation
+from observation import Observation
 
 import numpy as np
 import os
@@ -36,11 +36,12 @@ def load_raws_observations(obs_file,glat,glon):
   and converts them to Observation objects.
   """
   # load observations & register them to grid
-  orig_obs = np.loadtxt('inputs/station_observations')
+  orig_obs = np.loadtxt(obs_file,delimiter=',')
   obss = []
   for oo in orig_obs:
-      i, j = find_closest_grid_point(oo[0],oo[1],glat,glon)
-      obss.append(Observation(oo[0],oo[1],oo[2],oo[3],(i,j)))
+      i, j = find_closest_grid_point(oo[6],oo[7],glat,glon)
+      obst = datetime(int(oo[0]),int(oo[1]),int(oo[2]),int(oo[3]),int(oo[4]),int(oo[5]))
+      obss.append(Observation(obst,oo[6],oo[7],oo[8],oo[9],(i,j)))
   return obss
 
 
@@ -54,10 +55,12 @@ def load_rtma_data(in_dir):
                ("inputs/ds.td.nc", "DPT_2maboveground", "DPT"),
                ("inputs/ds.precipa.nc", "APCP_surface", "RAIN")]
 
+  rtma_time = None
   data = {}
   for rtmaf, rtmav, name in file_list:
       d = netCDF4.Dataset(rtmaf)
       data[name] = d.variables[rtmav][0,:,:]
+      rtma_time = d.variables['time']
       d.close()
 
   # converted accumulated precip into rain intensity
@@ -105,6 +108,9 @@ def load_rtma_data(in_dir):
 
   print("Chopping RTMA surface data to lat ndx [%d <-> %d], lon ndx [%d <-> %d]" % (i1,i2,j1,j2))
 
+  # add time after slicing
+  data['Time'] = datetime.fromtimestamp(rtma_time[0])
+
   return data
 
 
@@ -128,23 +134,15 @@ def run_module():
     print("Loading RTMA data ...")
     data = load_rtma_data("inputs")
 
-    # retrieve pertinent variables
+    # retrieve variables from RTMA
     lat, lon, hgt = data['Lat'], data['Lon'], data['HGT']
-
     t2, relh, rain = data['T2'], data['RH'], data['RAIN']
     ed, ew = compute_equilibria(t2,relh)
+    tm = data['Time']
 
-    tm = datetime.now()
     dom_shape = lat.shape
     print('INFO: domain size is %d x %d grid points.' % dom_shape)
     print('INFO: domain extent is lats (%g to %g) lons (%g to %g).' % (np.amin(lat),np.amax(lat),np.amin(lon),np.amax(lon)))
-
-    # load current state (or initialize from equilibrium if not found)
-    try:
-      in_file = netCDF4.Dataset('inputs/fm.nc', 'r')
-    except Exception:
-      print('INFO: input file not found, initializing from equilibrium')
-      fm = 0.5 * (ed + ew)
 
     # initialize output file
     out_file = netCDF4.Dataset('outputs/fm.nc', 'w')
@@ -161,7 +159,9 @@ def run_module():
     grid_dist_km = great_circle_distance(lon[0,0], lat[0,0], lon[1,1], lat[1,1])
     print('INFO: diagonal distance in grid is %g' % grid_dist_km)
 
-    print('Loaded %d observations.' % (len(reg_obs)))
+    obss = load_raws_observations('inputs/raws_ingest_201405041900.csv',lat,lon)
+    print('Loaded %d observations.' % (len(obss)))
+    print obss
 
     # set up parameters
     Nk = 3  # we simulate 4 types of fuel
@@ -169,8 +169,7 @@ def run_module():
     P0 = np.diag([0.01, 0.01, 0.01, 0.001, 0.001])
     Tk = np.array([1.0, 10.0, 100.0]) * 3600
     dt = 3600
-    print("INFO: Time step is 3600 seconds." % dt)
-    Kg = np.zeros((dom_shape[0], dom_shape[1], len(Tk)+2))
+    print("INFO: Time step is %d seconds." % dt)
 
     # preprocess all static covariates
     X = np.zeros((dom_shape[0], dom_shape[1], 4))
@@ -181,9 +180,21 @@ def run_module():
     else:
       X = X[:,:,:3]
 
-    models = GridMoistureModel(E[:,:,np.newaxis][:,:,np.zeros((3,),dtype=np.int)], Tk, P0)
+    # load current state (or initialize from equilibrium if not found)
+    fm_init = None
+    fm_cov_init = None
+    try:
+      in_file = netCDF4.Dataset('inputs/fm.nc', 'r')
+      fm_init = np.zeros(10)
+      fm_cov_init = np.zeros(100)
+    except Exception:
+      print('INFO: input file not found, initializing from equilibrium')
+      fm_init = 0.5 * (ed + ew)
+      fm_cov_init = P0
 
-    print('INFO: running 1hr time step now [time=%s].', str(model_time))
+    models = GridMoistureModel(fm_init[:,:,np.newaxis][:,:,np.zeros((3,),dtype=np.int)], Tk, P0)
+
+    print('INFO: performing forecast at: [time=%s].' % str(tm))
 
     # compute the FORECAST
     models.advance_model(ed, ew, rain, dt, Q)
@@ -198,7 +209,7 @@ def run_module():
         print("WARN: in field %d there were %d moisture values above 2.5!" % (i, np.count_nonzero(f[:,:,i] > 2.5)))
 
     # fit the trend surface model to data
-    tsm, tsm_var = trend_surface_model_kriging(obss, X)
+    tsm, tsm_var = fit_tsm(obss, X)
     if np.count_nonzero(tsm > 2.5) > 0:
         print('WARN: in TSM found %d values over 2.5, %d of those had rain, clamped to 2.5' %
                 (np.count_nonzero(tsm > 2.5),
@@ -209,6 +220,7 @@ def run_module():
         tsm[tsm < 0.0] = 0.0
 
     # if there were any observations, run the kalman update step
+    Kg = np.zeros((dom_shape[0], dom_shape[1], len(Tk)+2))
     models.kalman_update_single2(tsm, tsm_var, 1, Kg)
 
     # check post-assimilation results
@@ -220,25 +232,7 @@ def run_module():
     ncfmc[:,:,:] = models.get_state()
     ncfmc_cov[:,:,:,:] = models.P
 
-    # we don't care if we assimilated or not, we always check our error on target station if in test mode
-    if test_mode:
-                valid_times = [z for z in tgt_obs_fm10.keys() if abs(total_seconds(z - model_time)) < assim_time_win/2.0]
-                tgt_i, tgt_j = test_ngp
-                diagnostics().push("test_pred", f[tgt_i, tgt_j,1])
-                if len(valid_times) > 0:
-                  # this is our target observation [FIXME: this disregards multiple observations if multiple happen to be valid]
-                  tgt_obs = tgt_obs_fm10[valid_times[0]][0]
-                  obs = tgt_obs.get_value()
-                  diagnostics().push("test_obs", obs)
-                else:
-                  diagnostics().push("test_obs", np.nan)
-
-
-            # store data in wrf_file variable FMC_G
-            if cfg['write_fields']:
-                ncfmc_gc[t,:Nk,:,:] = np.transpose(models.get_state()[:,:,:Nk],axes=[2,0,1])
-
-        # store the diagnostics in a binary file when done
+    # store the diagnostics in a binary file when done
     diagnostics().dump_store(os.path.join(cfg['output_dir'], 'diagnostics.bin'))
 
     # close the netCDF file (relevant if we did write into FMC_GC)
