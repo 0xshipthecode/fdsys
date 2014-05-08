@@ -1,10 +1,10 @@
 
--module(fmncast_sup).
+-module(fdsys_sup).
 
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -16,13 +16,14 @@
 %% API functions
 %% ===================================================================
 
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+start_link(Args) ->
+    supervisor:start_link({local, ?MODULE}, ?MODULE, Args).
 
 %% ===================================================================
 %% Supervisor callbacks
 %% ===================================================================
 
-init([]) ->
-    {ok, { {one_for_one, 5, 10}, []} }.
-
+init(Args) ->
+    {ok, { {one_for_one, 5, 10},
+          [{fdsys_server, {fdsys_server,start_link,Args},
+            permanent, brutal_kill, worker, [fdsys_server]}] }}.

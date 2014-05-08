@@ -7,29 +7,31 @@ class GridMoistureModel:
     This is a pure-python implementation of individual moisture models
     running on a grid.
     """
-    Tk = np.array([1.0, 10.0, 100.0, 1000.0]) * 3600    # nominal fuel delays
-    r0 = 0.05                                           # threshold rainfall [mm/h]
-    rk = 8.0                                            # saturation rain intensity [mm/h]
-    Trk = 14.0 * 3600                                   # time constant for wetting model [s]
-    S = 2.5                                             # saturation intensity [dimensionless]
 
-
-    def __init__(self, m0, Tk=None, P0=None):
+    def __init__(self, m0, Tk, r0, rk, S, Trk, P0=None):
         """
         Initialize the model with given position and moisture levels.
 
           m0  - the initial condition for the entire grid (shape: grid0 x grid1 x num_fuels)
-          Tk  - drying/wetting time constants of simulated fuels (one per fuel), default [1 10 100 1000]
+          Tk  - drying/wetting time constants of simulated fuels (one per fuel) [hr]
+          r0  - threshold rain intensity that switches on the rain model [mm/h]
+          rk  - saturation rain intensity [mm/h]
+          S   - asymptotic rain saturation level [g/g]
+          Trk - asymptotic rain wetting timelag [hr]
           P0  - initial state error covariance
 
         """
-        s0, s1, k = m0.shape
-        if Tk is not None:
-            self.Tk = Tk
-        dim = k + 2
-        assert k == len(self.Tk)
+        self.Tk = Tk * 3600
+        s0, s1, dim = m0.shape
+        k = len(self.Tk)
+        assert dim == k + 2
+        self.r0 = r0
+        self.rk = rk
+        self.S = S
+        self.Trk = Trk * 3600
+
         self.m_ext = np.zeros((s0, s1, dim))
-        self.m_ext[:, :, :k] = m0
+        self.m_ext[:, :, :] = m0
 
         # note: the moisture advance will proceed by fuel moisture types
         # thus we only need space for one class at a time
@@ -43,14 +45,20 @@ class GridMoistureModel:
         self.EwA = np.zeros((s0, s1))
 
         # state covariance current and forecasted
-        self.P = np.zeros((s0, s1, dim, dim))
-        self.P2 = np.zeros((dim, dim))
-        for s in np.ndindex((s0, s1)):
-            self.P[s[0], s[1], :, :] = P0
+        self.P = np.zeros((s0, s1, dim, dim),order='C')
+        self.P2 = np.zeros((dim, dim),order='C')
+        if P0 is not None:
+          if len(P0.shape) == 2:
+            for s in np.ndindex((s0, s1)):
+              self.P[s[0], s[1], :, :] = P0
+          elif len(P0.shape) == 4:
+            self.P[:,:,:,:] = P0
+          else:
+            assert(False)
 
         # fill out the fixed parts of the jacobian
-        self.J = np.zeros((s0, s1, dim, dim))
-        self.Jii = np.zeros((s0, s1))
+        self.J = np.zeros((s0, s1, dim, dim),order='C')
+        self.Jii = np.zeros((s0, s1),order='C')
 
         # note: the observation operator H is common for all dims
         self.H = np.zeros((k, dim))
@@ -85,6 +93,8 @@ class GridMoistureModel:
         EdA += m_ext[:, :, k]
         EwA[:, :] = Ew
         EwA += m_ext[:, :, k]
+        EdA[EdA < 0] = 0
+        EwA[EwA < 0] = 0
 
         dS = m_ext[:, :, k + 1]
 
@@ -143,7 +153,7 @@ class GridMoistureModel:
             m_i[small_change] += (equi[small_change] - m_i[small_change]) * change[small_change] * (
                 1.0 - 0.5 * change[small_change])
 
-            #print('Diag at 86,205 fuel %d: model_id %d equi %g rlag %g change %g value %g -> %g' % 
+            #print('Diag at 86,205 fuel %d: model_id %d equi %g rlag %g change %g value %g -> %g' %
             #        (i, model_ids[dg_pos], equi[dg_pos], rlag[dg_pos], change[dg_pos], mi_old, m_i[dg_pos]))
 
             # store in state matrix
@@ -178,18 +188,19 @@ class GridMoistureModel:
 
 
         # transformed to run in-place with one pre-allocated temporary
-        dom_shape = P[:, :, 0, 0].shape
-        for i in range(dom_shape[0]):
-            for j in range(dom_shape[1]):
-                # Ps = Js P[s,:,:] Js^T
-                Ps = P[i, j, :, :]
-                Js = J[i, j, :, :]
-                np.dot(Js, Ps, P2)
-                np.dot(P2, Js.T, Ps)
+        if mQ is not None:
+          dom_shape = P[:, :, 0, 0].shape
+          for i in range(dom_shape[0]):
+              for j in range(dom_shape[1]):
+                  # Ps = Js P[s,:,:] Js^T
+                  Ps = P[i, j, :, :]
+                  Js = J[i, j, :, :]
+                  np.dot(Js, Ps, P2)
+                  np.dot(P2, Js.T, Ps)
 
-                # P[s,:,:] = Js P[s,:,:] Js^T + mQ
-                Ps += mQ
-                P[i, j, :, :] = Ps
+                  # P[s,:,:] = Js P[s,:,:] Js^T + mQ
+                  Ps += mQ
+                  P[i, j, :, :] = Ps
 
 
     def get_state(self):
@@ -307,4 +318,3 @@ class GridMoistureModel:
         for i in range(dom_shape[0]):
             for j in range(dom_shape[1]):
                 P[i, j, :, :] -= np.dot(Kg[i, j, :, np.newaxis], P[i, j, fuel_type:fuel_type + 1, :])
-
