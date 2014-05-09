@@ -10,12 +10,13 @@
 %% ===================================================================
 
 start(_StartType, _Args) ->
-    Cfg = load_config("etc/config"),
-    fdsys_sup:start_link(Cfg).
+  Cfg = load_config("etc/config"),
+  io:format("cfg is ~p~n", [Cfg]),
+  fdsys_sup:start_link(Cfg).
 
 
 stop(_State) ->
-    ok.
+  ok.
 
 
 load_config(Path) ->
@@ -25,7 +26,8 @@ load_config(Path) ->
         {ok,Toks,_} ->
           case erl_parse:parse_exprs(Toks) of
             {ok,AST} ->
-              erl_eval:exprs(AST, erl_eval:new_bindings());
+              {value, V, _} = erl_eval:exprs(AST, erl_eval:new_bindings()),
+              V;
             {error,Info} ->
               ErrTxt = lists:flatten(io_lib:format("Error in eval of configuration file: ~p~n", [Info])),
               error_logger:error_report(ErrTxt),

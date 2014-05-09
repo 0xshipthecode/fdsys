@@ -29,7 +29,6 @@ start_link(Cfg) ->
 %% ------------------------------------------------------------------
 
 init(Args) ->
-    io:format("fdsys_server init with args ~p", [Args]),
     schedule_next_run(?SERVER),
     {ok, Args}.
 

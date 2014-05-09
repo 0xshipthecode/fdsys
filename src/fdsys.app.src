@@ -1,4 +1,4 @@
-{application, fmncast,
+{application, fdsys,
  [
   {description, ""},
   {vsn, "1"},
@@ -7,6 +7,6 @@
                   kernel,
                   stdlib
                  ]},
-  {mod, { fmncast_app, []}},
+  {mod, { fdsys_app, []}},
   {env, []}
  ]}.

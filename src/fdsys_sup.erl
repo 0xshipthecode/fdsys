@@ -25,5 +25,6 @@ start_link(Args) ->
 
 init(Args) ->
     {ok, { {one_for_one, 5, 10},
-          [{fdsys_server, {fdsys_server,start_link,Args},
+          [{fdsys_server, {fdsys_server,start_link,[Args]},
             permanent, brutal_kill, worker, [fdsys_server]}] }}.
+
