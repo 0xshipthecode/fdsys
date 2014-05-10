@@ -106,6 +106,8 @@ def load_rtma_data(in_dir):
       j2 = tmp
       done = False
 
+  print('INFO: chopping all grids data to %d-%d x %d-%d' % (i1,i2,j1,j2))
+
   for k,v in data.iteritems():
     data[k] = v[i1:i2,j1:j2]
 
@@ -118,8 +120,8 @@ def load_rtma_data(in_dir):
 
   # check all input values
   check_values_in_range('RH',data['RH'],0,100)
-  check_values_in_range('T2',data['T2'],250,320)
-  check_values_in_range('DPT',data['DPT'],250,310)
+  check_values_in_range('T2',data['T2'],200,350)
+  check_values_in_range('DPT',data['DPT'],200,350)
 
   # add time after slicing
   data['Time'] = datetime.fromtimestamp(rtma_time,tz=pytz.utc)
@@ -208,6 +210,10 @@ def run_model(in_dir0, in_dir1, fm_dir):
     out_file.createDimension('fuel_moisture_classes_stag', 5)
     out_file.createDimension('south_north', dom_shape[0])
     out_file.createDimension('west_east', dom_shape[1])
+    nced = out_file.createVariable('Ed', 'f4', ('south_north', 'west_east'))
+    nced[:,:] = ed
+    ncew = out_file.createVariable('Ew', 'f4', ('south_north', 'west_east'))
+    ncew[:,:] = ew
     ncfmc = out_file.createVariable('FMC_GC_RAW', 'f4', ('south_north', 'west_east','fuel_moisture_classes_stag'))
     ncrelh = out_file.createVariable('RELH','f4', ('south_north', 'west_east'))
     ncrelh[:,:] = relh1

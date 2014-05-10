@@ -192,7 +192,7 @@ class GridMoistureModel:
           dom_shape = P[:, :, 0, 0].shape
           for i in range(dom_shape[0]):
               for j in range(dom_shape[1]):
-                  # Ps = Js P[s,:,:] Js^T
+                  # Ps = Js P[s,:,:] Js^T for s = (i,j)
                   Ps = P[i, j, :, :]
                   Js = J[i, j, :, :]
                   np.dot(Js, Ps, P2)

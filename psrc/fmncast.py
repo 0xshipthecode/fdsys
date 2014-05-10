@@ -17,7 +17,7 @@ import numpy as np
 import os
 import sys
 import string
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 import netCDF4
 
@@ -89,7 +89,7 @@ def load_rtma_data(in_dir):
         d = netCDF4.Dataset(path2)
       else:
         print('ERROR: no input file found for variable %s' % name)
-        sys.exit(2)
+        return None
 
       data[name] = d.variables[rtmav][0,:,:]
       rtma_time = d.variables['time'][0]
@@ -131,16 +131,21 @@ def load_rtma_data(in_dir):
     data[k] = v[i1:i2,j1:j2]
 
   # compute the relative humidity according to NOAA formula [http://www.srh.noaa.gov/images/epz/wxcalc/vaporPressure.pdf]
-  T2c = data['T2'] - 273.15
-  DTc = data['DPT'] - 273.15
-  e  = 6.11 * 10**(7.5 * DTc / (DTc + 237.3))
-  es = 6.11 * 10**(7.5 * T2c / (T2c + 237.3))
-  data['RH'] = e / es * 100
+#  T2c = data['T2'] - 273.15
+#  DTc = data['DPT'] - 273.15
+#  e  = 6.11 * 10**(7.5 * DTc / (DTc + 237.3))
+#  es = 6.11 * 10**(7.5 * T2c / (T2c + 237.3))
+#  data['RH'] = e / es * 100
+
+  # computation of RH according to Lawrence 2005 in AMS
+  t2 = data['T2'] - 273.15
+  td = data['DPT'] - 273.15
+  data['RH'] = 100*np.exp(17.625*243.04*(td - t2) / (243.04 + t2) / (243.0 + td))
 
   # check all input values
   check_values_in_range('RH',data['RH'],0,100)
-  check_values_in_range('T2',data['T2'],250,320)
-  check_values_in_range('DPT',data['DPT'],250,310)
+  check_values_in_range('T2',data['T2'],200,350)
+  check_values_in_range('DPT',data['DPT'],200,350)
 
   # add time after slicing
   data['Time'] = datetime.fromtimestamp(rtma_time,tz=pytz.utc)
@@ -224,6 +229,10 @@ def run_data_assimilation(in_dir0, in_dir1, fm_dir):
   out_file.createDimension('fuel_moisture_classes_stag', 5)
   out_file.createDimension('south_north', dom_shape[0])
   out_file.createDimension('west_east', dom_shape[1])
+  nced = out_file.createVariable('Ed', 'f4', ('south_north', 'west_east'))
+  nced[:,:] = ed
+  ncew = out_file.createVariable('Ew', 'f4', ('south_north', 'west_east'))
+  ncew[:,:] = ew
   ncfmc_fc = out_file.createVariable('FMC_GC_FC', 'f4', ('south_north', 'west_east','fuel_moisture_classes_stag'))
   ncfmc_an = out_file.createVariable('FMC_GC', 'f4', ('south_north', 'west_east','fuel_moisture_classes_stag'))
   nckg = out_file.createVariable('K', 'f4', ('south_north', 'west_east','fuel_moisture_classes_stag'))
@@ -251,10 +260,10 @@ def run_data_assimilation(in_dir0, in_dir1, fm_dir):
 
   # set up parameters
   Nk = 3  # we simulate 4 types of fuel
-  Q = np.diag([1e-4, 1e-5, 1e-6, 1e-6, 1e-6])
-  P0 = np.diag([0.01, 0.01, 0.01, 0.001, 0.001])
+  Q = np.diag([1e-4, 1e-4, 1e-4, 1e-4, 1e-4])
+  P0 = np.diag([0.02, 0.02, 0.02, 0.01, 0.01])
   Tk = np.array([1.0, 10.0, 100.0])
-  dt = 3600
+  dt = (tm - tm0).seconds
   print("INFO: Time step is %d seconds." % dt)
 
   # preprocess all covariates
