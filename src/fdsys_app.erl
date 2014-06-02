@@ -11,7 +11,6 @@
 
 start(_StartType, _Args) ->
   Cfg = load_config("etc/config"),
-  io:format("cfg is ~p~n", [Cfg]),
   fdsys_sup:start_link(Cfg).
 
 
