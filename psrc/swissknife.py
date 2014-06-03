@@ -27,7 +27,6 @@ def main(args):
     print("display var lat lon <nc-file> ->  shows all values of var nearest to lat/lon + distance to point")
     sys.exit(1)
 
-
   if args[1] == 'display':
     varname, lat, lon = args[2], float(args[3]), float(args[4])
     ncpath = args[5]

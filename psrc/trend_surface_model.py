@@ -59,6 +59,11 @@ def fit_tsm(obs_data, X):
     """
     Nobs = len(obs_data)
 
+    # check for all-zero covariates
+    for i in range(X.shape[2]):
+      if np.all(np.abs(X[:,:,i]) < 1e-10):
+        print('ERROR: the covariate %d has all values too close to zero' % i)
+
     # we ensure we have at most Nobs covariates
     Nallcov = min(X.shape[2], Nobs)
 
@@ -171,5 +176,4 @@ def fit_tsm(obs_data, X):
             if V[i,j] < 0.0:
               print("ERROR: negative kriging variance!")
 
-    return K, V
-
+    return K, V, s2_eta_hat

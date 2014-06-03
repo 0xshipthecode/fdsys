@@ -12,13 +12,13 @@ from trend_surface_model import fit_tsm
 from grid_moisture_model import GridMoistureModel
 from spatial_model_utilities import great_circle_distance, find_closest_grid_point
 from observation import Observation
+from rtma import load_rtma_data
 
 import numpy as np
 import os
 import sys
 import string
 from datetime import datetime, timedelta
-import pytz
 import netCDF4
 
 
@@ -38,121 +38,22 @@ def load_raws_observations(obs_file,glat,glon):
   # load observations & register them to grid
   orig_obs = np.loadtxt(obs_file,delimiter=',')
   obss = []
+  omin, omax = 0.6, 0.0
   for oo in orig_obs:
       i, j = find_closest_grid_point(oo[6],oo[7],glat,glon)
       obst = datetime(int(oo[0]),int(oo[1]),int(oo[2]),int(oo[3]),int(oo[4]),int(oo[5]))
       # check & remove non-sense zero observations
       if oo[8] > 0:
         obss.append(Observation(obst,oo[6],oo[7],oo[8],oo[9],(i,j)))
+      omin = min(omin, oo[8])
+      omax = max(omax, oo[8])
+  print('INFO: loaded %d observations in range %g to %g' % (len(obss),omin,omax))
   return obss
-
-
-def check_values_in_range(name,vals,vmin,vmax):
-  if np.any(vals[:] < vmin):
-    print('WARNING: Var [%s] has %d values below minimum %g, clamping ...' % (name, np.sum(vals[:]<vmin), vmin))
-    vals[vals < vmin] = vmin
-  if np.any(vals[:] > vmax):
-    print('WARNING: Var [%s] has %d values above maximum %g, clamping ...' % (name, np.sum(vals[:]>vmax), vmax))
-    vals[vals > vmax] = vmax
 
 
 def time_from_dir(dirname):
   ts = dirname[dirname.index("/")+1:]
   return datetime(int(ts[:4]),int(ts[4:6]),int(ts[6:8]),int(ts[9:11]), 0, 0)
-
-
-def load_rtma_data(in_dir):
-  """
-  This function expects the files ds.temp.nc, ds.td.nc, ds.precipa.nc
-  to be in the directory inputs and the file rtma_elevation.nc to be in
-  the directory static.  All of the data is loaded and stored in a dictionary.
-  """
-  # decode the time from the input directory name, convention is YYYYMMDD-HH00
-  ts = in_dir[in_dir.index("/")+1:]
-  suffix = ts[:8] + ts[9:11] + "00.nc"
-  print suffix
-  file_list = [('ds.precipa.nc', 'LEIA98_KWBR_' + suffix, 'APCP_surface',      'RAIN'),
-               ('ds.td.nc',      'LRIA98_KWBR_' + suffix, 'DPT_2maboveground', 'DPT'),
-               ('ds.temp.nc',    'LTIA98_KWBR_' + suffix, 'TMP_2maboveground', 'T2')]
-
-  # FIXME: why does the precipitation have the incorrect timestamp?
-
-  rtma_time = None
-  data = {}
-  for rtmaf, rtmaf2, rtmav, name in file_list:
-      d = None
-      path = os.path.join(in_dir, rtmaf)
-      path2 = os.path.join(in_dir, rtmaf2)
-      if os.path.isfile(path):
-        d = netCDF4.Dataset(path)
-      elif os.path.isfile(path2):
-        d = netCDF4.Dataset(path2)
-      else:
-        print('ERROR: no input file found for variable %s' % name)
-        return None
-
-      data[name] = d.variables[rtmav][0,:,:]
-      rtma_time = d.variables['time'][0]
-      d.close()
-
-  # converted accumulated precip into rain intensity in mm / hr ?
-  data['RAIN'] = 0.01 * data['RAIN']
-
-  d = netCDF4.Dataset("static/rtma_elevation.nc")
-  data['HGT'] = d.variables['HGT_surface'][0,:,:]
-  Lat = d.variables['latitude'][:,:]
-  Lon = d.variables['longitude'][:,:] - 360
-  data['Lat'] = Lat
-  data['Lon'] = Lon
-
-  # chop all datasets to Colorado coordinates [36.9 <-> 41.1, -109.1 <-> -101.9]
-  i1, i2, j1, j2 = 0, 0, Lat.shape[0], Lat.shape[1]
-  done = False
-  while not done:
-    done = True
-    tmp = np.where(np.amax(Lat[:, j1:j2],axis=1) < 37)[0][-1]
-    if i1 != tmp:
-      i1 = tmp
-      done = False
-    tmp = np.where(np.amin(Lat[:, j1:j2],axis=1) > 41)[0][0]
-    if i2 != tmp:
-      i2 = tmp
-      done = False
-    tmp = np.where(np.amax(Lon[i1:i2,:],axis=0) < -109)[0][-1]
-    if j1 != tmp:
-      j1 = tmp
-      done = False
-    tmp = np.where(np.amin(Lon[i1:i2,:],axis=0) > -102)[0][0]
-    if j2 != tmp:
-      j2 = tmp
-      done = False
-
-  for k,v in data.iteritems():
-    data[k] = v[i1:i2,j1:j2]
-
-  # compute the relative humidity according to NOAA formula [http://www.srh.noaa.gov/images/epz/wxcalc/vaporPressure.pdf]
-#  T2c = data['T2'] - 273.15
-#  DTc = data['DPT'] - 273.15
-#  e  = 6.11 * 10**(7.5 * DTc / (DTc + 237.3))
-#  es = 6.11 * 10**(7.5 * T2c / (T2c + 237.3))
-#  data['RH'] = e / es * 100
-
-  # computation of RH according to Lawrence 2005 in AMS
-  t2 = data['T2'] - 273.15
-  td = data['DPT'] - 273.15
-  data['RH'] = 100*np.exp(17.625*243.04*(td - t2) / (243.04 + t2) / (243.0 + td))
-
-  # check all input values
-  check_values_in_range('RH',data['RH'],0,100)
-  check_values_in_range('T2',data['T2'],200,350)
-  check_values_in_range('DPT',data['DPT'],200,350)
-
-  # add time after slicing
-  data['Time'] = datetime.fromtimestamp(rtma_time,tz=pytz.utc)
-
-  print('Loaded RTMA fields for %s.' % str(data['Time']))
-
-  return data
 
 
 def compute_equilibria(T,H):
@@ -165,13 +66,6 @@ def compute_equilibria(T,H):
   d *= 0.01
   w *= 0.01
   return d, w
-
-
-def esmf_time(dt):
-  """
-  Format a datetime in ESMF format.
-  """
-  return '%04d-%02d-%02d_%02d:%02d:%02d' % (dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second)
 
 
 def run_data_assimilation(in_dir0, in_dir1, fm_dir):
@@ -246,7 +140,7 @@ def run_data_assimilation(in_dir0, in_dir1, fm_dir):
   nclon = out_file.createVariable('Lon', 'f4', ('south_north', 'west_east'))
   nclon[:,:] = lon
 
-  print('INFO: opened %s and wrote XLAT,XLONG,RELH,T2 fields.' % out_fm_file)
+  print('INFO: opened %s and wrote XLAT,XLONG,RELH,T2,Ed,Ew fields.' % out_fm_file)
 
   ### Load observation data from the stations
 
@@ -260,11 +154,14 @@ def run_data_assimilation(in_dir0, in_dir1, fm_dir):
 
   # set up parameters
   Nk = 3  # we simulate 4 types of fuel
-  Q = np.diag([1e-4, 1e-4, 1e-4, 1e-4, 1e-4])
-  P0 = np.diag([0.02, 0.02, 0.02, 0.01, 0.01])
+  Q = np.diag([1e-4,5e-5,1e-5,1e-6,1e-6])
+  P0 = np.diag([0.01,0.01,0.01,0.001,0.001])
   Tk = np.array([1.0, 10.0, 100.0])
   dt = (tm - tm0).seconds
   print("INFO: Time step is %d seconds." % dt)
+
+  # remove rain that is too small to make any difference
+  rain[rain < 0.01] = 0
 
   # preprocess all covariates
   X = np.zeros((dom_shape[0], dom_shape[1], 4))
@@ -304,25 +201,29 @@ def run_data_assimilation(in_dir0, in_dir1, fm_dir):
   f = models.get_state()
   ncfmc_fc[:,:,:] = f
 
+  # fill 10-hr forecast as the first field of X
+  X[:,:,0] = f[:,:,1]
+
   # examine the assimilated fields (if assimilation is activated)
   for i in range(3):
     print('INFO [%d]: [min %g, mean %g, max %g]' % (i, np.amin(f[:,:,i]), np.mean(f[:,:,i]), np.amax(f[:,:,i])))
     if np.any(f[:,:,i] < 0.0):
       print("WARN: in field %d there were %d negative moisture values !" % (i, np.count_nonzero(f[:,:,i] < 0.0)))
-    if np.any(f[:,:,i] > 2.5):
-      print("WARN: in field %d there were %d moisture values above 2.5!" % (i, np.count_nonzero(f[:,:,i] > 2.5)))
+    if np.any(f[:,:,i] > 0.6):
+      print("WARN: in field %d there were %d moisture values above 0.6!" % (i, np.count_nonzero(f[:,:,i] > 2.5)))
 
   if len(obss) > 0:
 
     print('INFO: running trend surface model ...')
 
     # fit the trend surface model to data
-    tsm, tsm_var = fit_tsm(obss, X)
-    if np.count_nonzero(tsm > 2.5) > 0:
-        print('WARN: in TSM found %d values over 2.5, %d of those had rain, clamped to 2.5' %
-                (np.count_nonzero(tsm > 2.5),
-                 np.count_nonzero(np.logical_and(tsm > 2.5, rain > 0.0))))
-        tsm[tsm > 2.5] = 2.5
+    tsm, tsm_var, s2 = fit_tsm(obss, X)
+    print('INFO: microscale variability variance is %g' % s2)
+    if np.count_nonzero(tsm > 0.6) > 0:
+        print('WARN: in TSM found %d values over 0.6, %d of those had rain, clamped to 2.5' %
+                (np.count_nonzero(tsm > 0.6),
+                 np.count_nonzero(np.logical_and(tsm > 0.6, rain > 0.0))))
+        tsm[tsm > 0.6] = 0.6
     if np.count_nonzero(tsm < 0.0) > 0:
         print('WARN: in TSM found %d values under 0.0, clamped to 0.0' % np.count_nonzero(tsm < 0.0))
         tsm[tsm < 0.0] = 0.0
@@ -334,16 +235,18 @@ def run_data_assimilation(in_dir0, in_dir1, fm_dir):
     models.kalman_update_single2(tsm[:,:,np.newaxis], tsm_var[:,:,np.newaxis,np.newaxis], 1, Kg)
 
     # check post-assimilation results
+    f = models.get_state()
     for i in range(3):
-        if np.any(models.get_state()[:,:,i] < 0.0):
-            print("WARN: in field %d there were %d negative moisture values !" % (i, np.count_nonzero(models.get_state()[:,:,i] < 0.0)))
-
+        if np.any(f[:,:,i] < 0.0):
+            print("WARN: in field %d there were %d negative moisture values and %f values over 0.6 !" %
+                  (i, np.count_nonzero(f[:,:,i] < 0.0),np.count_nonzero(f[:,:,i] > 0.6)))
+    f[f < 0] = 0
     nckg[:,:,:] = Kg
 
   print('INFO: storing results in netCDF file %s.' % out_fm_file)
 
   # store post-assimilation (or forecast depending on whether observations were available) FM-10 state and variance
-  ncfmc_an[:,:,:] = models.get_state()
+  ncfmc_an[:,:,:] = f
   ncfmc_cov[:,:,:,:] = models.get_state_covar()
 
   # close the netCDF file (relevant if we did write into FMC_GC)
@@ -353,14 +256,6 @@ def run_data_assimilation(in_dir0, in_dir1, fm_dir):
 
 
 if __name__ == '__main__':
-#    import profile
-#    import pstats
-#    profile.run('run_module(); print', 'spatial_model.stats')
-
-#    stats = pstats.Stats('spatial_model.stats')
-#    stats.strip_dirs()
-#    stats.sort_stats('cumulative')
-#    stats.print_stats()
 
   if len(sys.argv) != 4:
     print('Usage: %s <in_dir0> <in_dir1> <fm_dir>' % sys.argv[0])

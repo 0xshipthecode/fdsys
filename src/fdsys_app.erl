@@ -11,14 +11,13 @@
 
 start(_StartType, _Args) ->
   Cfg = load_config("etc/config"),
-  io:format("cfg is ~p~n", [Cfg]),
   fdsys_sup:start_link(Cfg).
 
 
 stop(_State) ->
   ok.
 
-
+-spec load_config(string()) -> [term()].
 load_config(Path) ->
   case file:read_file(Path) of
     {ok, Cnt} ->

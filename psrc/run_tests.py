@@ -5,6 +5,7 @@ from fmrun import run_model
 from datetime import datetime, timedelta
 from swissknife import get_grid_values_from_file
 import os
+import sys
 
 
 def time_to_input_dir(tm):
@@ -13,8 +14,20 @@ def time_to_input_dir(tm):
 
 if __name__ == '__main__':
 
+  if len(sys.argv) != 4:
+    print('usage: %s <obs-file> <fm-index> <prerun-length-hrs>' % sys.argv[0])
+    sys.exit(0)
+
+  obs_path = sys.argv[1]
+  fm_ndx = int(sys.argv[2])
+  prerun_hrs = int(sys.argv[3])
+
+  print('INFO: **********************************************************************')
+  print('INFO: run_tests.py with obs_file=%s fm-index=%d prerun-length=%d' % (obs_path,fm_ndx,prerun_hrs))
+  print('INFO: **********************************************************************')
+
   # load the csv file
-  with open('CO_100hr2.csv','r') as f:
+  with open(obs_path,'r') as f:
     obss = []
     days = []
     for line in f.readlines():
@@ -36,12 +49,21 @@ if __name__ == '__main__':
       for d in days:
         f.write('%d,%d,%d\n' % (d.year,d.month,d.day))
 
+    #print('FATAL: terminating after reading in dates')
+    #sys.exit(1)
+
+    udays = [datetime(2013,6,11)]
+
     # for each uday, run the raw simulation
     for tm in udays:
+
+      # remove pre-computed fuel moisture file
+      # os.system('find state -name "fm*" | xargs rm')
+
       print('*************** DAY = %s ******************' % str(tm))
       # start 12 hrs back and run 11 times
       tm2 = tm.replace(hour=20)
-      tms = [tm2 - timedelta(seconds=i*3600) for i in range(6+1)]
+      tms =  [tm2 - timedelta(seconds=i*3600) for i in range(prerun_hrs+1)]
       tms.reverse()
 
       # run the simulation (raw model)
@@ -60,6 +82,6 @@ if __name__ == '__main__':
           if o[1] == tm:
             dist,gi,gj,valsr = get_grid_values_from_file(ncpathr,'FMC_GC_RAW',o[2],o[3])
             dist,gi,gj,valsda = get_grid_values_from_file(ncpathda,'FMC_GC',o[2],o[3])
-            print('VALUES: %s,%s,%g,%g,%g,%g,%g' % (o[0],str(o[1]),o[2],o[3],o[4],valsda[2]*100,valsr[2]*100))
+            print('VALUES,%s,%s,%g,%g,%g,%g,%g' % (o[0],str(o[1]),o[2],o[3],o[4],valsda[fm_ndx]*100,valsr[fm_ndx]*100))
       else:
         print('MISSING: cannot obtain values for time %s' % str(tm))

@@ -8,9 +8,11 @@
 execute_cycle_range(FromGMT,Count,SSel) ->
   % find the time extent
   Times = lists:map(fun (DH) -> fdsys_util:shift_by_seconds(FromGMT,DH*3600) end, lists:seq(0,Count)),
+
   % extend both ways by 30 minutes
   Start = fdsys_util:shift_by_seconds(hd(Times),-30*60),
   End = fdsys_util:shift_by_seconds(lists:last(Times),30*60),
+
   % retrieve all observations of fm-10 in selector during the extended timespan
   raws_ingest:acquire_observations(SSel,[fm10],{Start,End},120),
   % run the data assimilation mechanism
@@ -20,13 +22,9 @@ execute_cycle_range(FromGMT,Count,SSel) ->
 -spec execute_history_cycle(calendar:datetime(),raws_ingest:station_selector()) -> ok|term().
 execute_history_cycle(AtGMT,SSel) ->
 
-  % find current GMT time
+  % setup the parameters for the job
   {{Y,M,D},{H,_,_}} = AtGMT,
-
-  % vars are set statically at this time
   Vars = [temp,dewpoint,precip,wind_spd,wind_dir],
-
-  % construct name of input directory for target time
   InDir = lists:flatten(io_lib:format("inputs/~4..0B~2..0B~2..0B-~2..0B00", [Y,M,D,H])),
 
   % construct name of input directory for origin time [1hr bac]
@@ -43,7 +41,7 @@ execute_history_cycle(AtGMT,SSel) ->
     ok ->
       % phase 3: run the fmda
       LogPath = lists:flatten(io_lib:format("fmncast-~4..0B~2..0B~2..0B-~2..0B00.log",[Y,M,D,H])),
-      error_logger:info_report(fdsys_util:fmt_text("rtma_server: running fmncast.py for GMT time ~p", [AtGMT])),
+      error_logger:info_report(fdsys_util:fmt_text("fdsys_test: running fmncast.py for GMT time ~p", [AtGMT])),
       os:cmd(io_lib:format("python psrc/fmncast.py ~s ~s state &> outputs/~s", [InDir0,InDir,LogPath])),
       ok;
     Errors ->

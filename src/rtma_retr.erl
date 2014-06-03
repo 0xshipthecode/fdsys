@@ -14,9 +14,9 @@ retrieve_archived({{Y,M,D},{H,_,_}},Vars,Dir) ->
   Suffix = io_lib:format("~4..0B~2..0B~2..0B~2..0B00", [Y,M,D,H]),
   Files = lists:map(fun (V) -> [var_to_archive_name(V),"_",Suffix] end, Vars),
   Rs = lists:map(fun(F) -> stream_url_to(UrlBase,Dir,F) end, Files),
-  error_logger:info_report(logger_text("rtma_server: streamed ~p files into directory ~p, converting ...", [length(Rs),Dir])),
+  error_logger:info_report(logger_text("rtma_retr: streamed ~p files into directory ~p, converting ...", [length(Rs),Dir])),
   os:cmd("./scripts/grib_to_netcdf_archive.sh " ++ Dir ++ " > " ++ Dir ++ "/grib_to_netcdf.log"),
-  error_logger:info_report(logger_text("rtma_server: conversion process complete (~p files in directory ~p).", [length(Rs),Dir])),
+  error_logger:info_report(logger_text("rtma_retr: conversion process complete (~p files in directory ~p).", [length(Rs),Dir])),
   lists:filter(fun (ok) -> false; (_) -> true end, Rs).
 
 
@@ -32,27 +32,27 @@ retrieve(UrlPfix,RT,Vars,Dir) ->
   UrlBase = lists:flatten(io_lib:format("~s/RT.~2..0B", [UrlPfix, RT])),
   Files = lists:map(fun (V) -> "ds." ++ var_to_rt_name(V) ++ ".bin" end, Vars),
   Rs = lists:map(fun(F) -> stream_url_to(UrlBase,Dir,F) end, Files),
-  error_logger:info_report(logger_text("rtma_server: streamed ~p files into directory ~p, converting ...", [length(Rs),Dir])),
+  error_logger:info_report(logger_text("rtma_retr: streamed ~p files into directory ~p, converting ...", [length(Rs),Dir])),
   os:cmd("./scripts/grib_to_netcdf_rt.sh " ++ Dir ++ " > " ++ Dir ++ "/grib_to_netcdf.log"),
-  error_logger:info_report(logger_text("rtma_server: conversion process complete (~p files in directory ~p).", [length(Rs),Dir])),
+  error_logger:info_report(logger_text("rtma_retr: conversion process complete (~p files in directory ~p).", [length(Rs),Dir])),
   lists:filter(fun (ok) -> false; (_) -> true end, Rs).
 
 
 -spec stream_url_to(string(),string(),string()) -> ok | {error, term()}.
 stream_url_to(UrlBase,Dir,F) ->
   Url = lists:flatten([UrlBase,"/",F]),
-  error_logger:info_report("rtma_server: retrieving url " ++ Url),
+  error_logger:info_report("rtma_retr: retrieving url " ++ Url),
   case httpc:request(get, {Url, []}, [], [{stream, filename:join(Dir,F)}]) of
     {ok, saved_to_file} ->
-      ErrTxt = lists:flatten(io_lib:format("rtma_server: success retrieving URL ~s", [Url])),
+      ErrTxt = lists:flatten(io_lib:format("rtma_retr: success retrieving URL ~s", [Url])),
       error_logger:info_report(ErrTxt),
       ok;
     {ok, Other} ->
-      ErrTxt = lists:flatten(io_lib:format("rtma_server: failure ~p retrieving URL ~s", [Other,Url])),
+      ErrTxt = lists:flatten(io_lib:format("rtma_retr: failure ~p retrieving URL ~s", [Other,Url])),
       error_logger:error_report(ErrTxt),
       {error, Other};
     {error, Reason} ->
-      ErrTxt = lists:flatten(io_lib:format("rtma_server: failure ~p retrieving URL ~s", [Reason,Url])),
+      ErrTxt = lists:flatten(io_lib:format("rtma_retr: failure ~p retrieving URL ~s", [Reason,Url])),
       error_logger:error_report(ErrTxt),
       {error, Reason}
   end.
@@ -63,19 +63,20 @@ stream_url_to(UrlBase,Dir,F) ->
 %
 -spec is_available(string(),non_neg_integer(),[atom()]) -> [string()].
 is_available(UrlPfix,RT,Vars) ->
-  error_logger:info_report(logger_text("rtma_server: checking if RTMA available for RT ~p yet with vars=~p.", [RT,Vars])),
+  error_logger:info_report(logger_text("rtma_retr: checking if RTMA available for RT ~p yet with vars=~p.", [RT,Vars])),
   UrlBase = lists:flatten(io_lib:format("~s/RT.~2..0B", [UrlPfix, RT])),
   Rs = lists:map(fun(V) -> check_file_time(UrlBase,var_to_rt_name(V)) end, Vars),
   case lists:filter(fun ([]) -> false; (_) -> true end, Rs) of
     [] ->
-      error_logger:info_report(logger_text("rtma_server: analysis for RT ~p is ready with vars=~p.",[RT,Vars])),
+      error_logger:info_report(logger_text("rtma_retr: analysis for RT ~p is ready with vars=~p.",[RT,Vars])),
       [];
     Ws ->
-      error_logger:info_report(logger_text("rtma_server: analysis not ready, waiting on files ~w for RT ~p with vars=~p.", [RT,Ws,Vars])),
+      error_logger:info_report(logger_text("rtma_retr: analysis not ready, waiting on files ~w for RT ~p with vars=~p.", [RT,Ws,Vars])),
       Ws
   end.
 
 
+-spec check_file_time(string(),string()) -> []|string().
 check_file_time(UrlBase,V) ->
   Url = UrlBase ++ "/ds." ++ V ++ ".bin",
   T = calendar:universal_time(),
@@ -89,7 +90,7 @@ check_file_time(UrlBase,V) ->
           DT = parse_header_datetime(LM),
           Hsec = calendar:datetime_to_gregorian_seconds(DT),
           % check if the last-modified is less than one hour
-          case Tsec - Hsec < 24*3600 of
+          case Tsec - Hsec < 23.5*3600 of
             true ->
               [];
             false ->
@@ -143,5 +144,6 @@ var_to_archive_name(wind_spd) -> "LNIA98_KWBR";
 var_to_archive_name(wind_dir) -> "LNIA98_KWBR".
 
 
+-spec logger_text(string(),[term()]) -> string().
 logger_text(Txt,Args) ->
   lists:flatten(io_lib:format(Txt,Args)).
