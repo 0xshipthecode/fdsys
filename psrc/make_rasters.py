@@ -27,7 +27,7 @@ def render_rasters(vs,ncpath):
     raster,bounds = basemap_raster_mercator(lon,lat,vals)
 
     # dump binary data to file
-    with open('outputs/' + oname + '.png','w') as f:
+    with open('rasters/' + oname + '.png','w') as f:
       f.write(raster)
 
   # all bounds will be exactly the same
