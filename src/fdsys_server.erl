@@ -29,6 +29,7 @@ start_link(Cfg) ->
 
 init(Args) ->
     schedule_next_run(?SERVER,0),
+    afm_ingest:subscribe(),
     {ok, Args}.
 
 handle_call(_Request, _From, State) ->
@@ -46,11 +47,16 @@ handle_info(Info, State) ->
       execute_cycle(Pfix,AtGMT,SSel),
       schedule_next_run(?SERVER, 40),
       {noreply, State};
-    _ ->
+    {afm_new_detections,_,_} ->
+      write_fire_detections(),
+      {noreply, State};
+    Unknown ->
+      error_logger:warning_msg("fdsys_server:handle_info/2 encountered a message ~p that was not understood.", [Unknown]),
       {noreply, State}
   end.
 
 terminate(_Reason, _State) ->
+    afm_ingest_server:unsubscribe(?SERVER),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -169,3 +175,12 @@ wait_for_results(Lst) ->
 -spec test_cycle(calendar:datetime()) -> [term()].
 test_cycle(AtGMT) ->
   execute_cycle("http://weather.noaa.gov/pub/SL.us008001/ST.opnl/DF.gr2/DC.ndgd/GT.rtma/AR.conus",AtGMT,{station_file,"etc/raws_station_list"}).
+
+
+-spec write_fire_detections() -> ok.
+write_fire_detections() ->
+  FromTS = fdsys_util:shift_by_seconds(calendar:universal_time(),-24*3600),
+  Ds = afm_ingest:detections_since(FromTS,{37,41},{-109,-102}),
+  error_logger:info_msg("fdsys_server: writing ~p fire detections to data/fire_detections.json", [length(Ds)]),
+  G = afm_ingest:to_geojson(Ds),
+  file:write_file("data/fire_detections.json",G).
