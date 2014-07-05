@@ -52,7 +52,7 @@ def make_colorbar(rng,orientation,size_in,cmap,cb_label,cb_title,dpi=200):
     return str_io.getvalue()
 
 
-def basemap_raster_mercator(lon, lat, grid):
+def basemap_raster_mercator(lon, lat, grid, cmap = None):
   """
   Render a raster in mercator projection.  Locations with no values are
   rendered transparent.
@@ -60,6 +60,10 @@ def basemap_raster_mercator(lon, lat, grid):
   # longitude/latitude extent
   lons = (np.amin(lon), np.amax(lon))
   lats = (np.amin(lat), np.amax(lat))
+
+  if cmap is None:
+    cmap = mpl.cm.jet
+    cmap.set_bad('w', 1.0)
 
   # construct spherical mercator projection for region of interest
   m = Basemap(projection='merc',llcrnrlat=lats[0], urcrnrlat=lats[1],
@@ -69,8 +73,6 @@ def basemap_raster_mercator(lon, lat, grid):
   masked_grid = np.ma.array(grid,mask=np.isnan(grid))
   fig = plt.figure(frameon=False)
   plt.axis('off')
-  cmap = mpl.cm.jet
-  cmap.set_bad('w', 1.0)
   m.pcolormesh(lon,lat,masked_grid,latlon=True,cmap=cmap,vmin=vmin,vmax=vmax)
 
   str_io = StringIO.StringIO()
