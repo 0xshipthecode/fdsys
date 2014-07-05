@@ -71,7 +71,7 @@ is_available(UrlPfix,RT,Vars) ->
       error_logger:info_report(logger_text("rtma_retr: analysis for RT ~p is ready with vars=~p.",[RT,Vars])),
       [];
     Ws ->
-      error_logger:info_report(logger_text("rtma_retr: analysis not ready, waiting on files ~w for RT ~p with vars=~p.", [RT,Ws,Vars])),
+      error_logger:info_report(logger_text("rtma_retr: analysis not ready for RT ~p, waiting on files ~w [vars=~w].", [RT,Ws,Vars])),
       Ws
   end.
 
@@ -89,12 +89,12 @@ check_file_time(UrlBase,V) ->
         LM ->
           DT = parse_header_datetime(LM),
           Hsec = calendar:datetime_to_gregorian_seconds(DT),
-          % check if the last-modified is less than one hour
-          case Tsec - Hsec < 23.5*3600 of
+          % check if the last-modified is less than 24 hours ago
+          case Tsec - Hsec < 24*3600 of
             true ->
               [];
             false ->
-              V
+              {V,Tsec - Hsec}
           end
       end;
     _ ->
