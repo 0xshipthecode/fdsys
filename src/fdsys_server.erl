@@ -32,20 +32,24 @@ init(Args) ->
     afm_ingest:subscribe(),
     {ok, Args}.
 
+
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
+
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+
 handle_info(Info, State) ->
   case Info of
     cycle_nowcast ->
-      Pfix = proplists:get_value(url_prefix,State),
+      Pfix = proplists:get_value(rtma_url_prefix,State),
       AtGMT = calendar:universal_time(),
       SSel = proplists:get_value(station_selector,State),
       execute_cycle(Pfix,AtGMT,SSel),
       schedule_next_run(?SERVER, 40),
+      write_fire_detections(),
       {noreply, State};
     {afm_new_detections,_,_} ->
       write_fire_detections(),
@@ -55,9 +59,11 @@ handle_info(Info, State) ->
       {noreply, State}
   end.
 
+
 terminate(_Reason, _State) ->
     afm_ingest_server:unsubscribe(?SERVER),
     ok.
+
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -76,7 +82,7 @@ schedule_next_run(PID,WaitAtLeastMins) ->
       (20 - Min) * 60;
     false ->
       % next run will be NOW
-      error_logger:info_msg("fdsys_server: running a cycle immediately (but after ~p mins).", [WaitAtLeastMins]),
+      error_logger:info_msg("fdsys_server: running a cycle immediately (but after ~p mins).~n", [WaitAtLeastMins]),
       0
   end,
   timer:send_after((WaitAtLeastMins * 60 + TimeoutS) * 1000, PID, cycle_nowcast),
@@ -172,6 +178,7 @@ wait_for_results(Lst,Res) ->
 wait_for_results(Lst) ->
   wait_for_results(Lst,[]).
 
+
 -spec test_cycle(calendar:datetime()) -> [term()].
 test_cycle(AtGMT) ->
   execute_cycle("http://weather.noaa.gov/pub/SL.us008001/ST.opnl/DF.gr2/DC.ndgd/GT.rtma/AR.conus",AtGMT,{station_file,"etc/raws_station_list"}).
@@ -181,6 +188,6 @@ test_cycle(AtGMT) ->
 write_fire_detections() ->
   FromTS = fdsys_util:shift_by_seconds(calendar:universal_time(),-24*3600),
   Ds = afm_ingest:detections_since(FromTS,{37,41},{-109,-102}),
-  error_logger:info_msg("fdsys_server: writing ~p fire detections to data/fire_detections.json", [length(Ds)]),
+  error_logger:info_msg("fdsys_server: writing ~p fire detections to data/fire_detections.json~n", [length(Ds)]),
   G = afm_ingest:to_geojson(Ds),
   file:write_file("data/fire_detections.json",G).
