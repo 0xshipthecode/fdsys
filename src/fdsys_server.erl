@@ -78,14 +78,15 @@ schedule_next_run(PID,WaitAtLeastMins) ->
   TimeoutS = case Min < 20 of
     true ->
       % next run will be H now
-      error_logger:info_msg("fdsys_server: scheduling next run in ~p minutes.", [20-Min+WaitAtLeastMins]),
-      (20 - Min) * 60;
+      TM = max(20 - Min, WaitAtLeastMins),
+      error_logger:info_msg("fdsys_server: scheduling next run in ~p minutes.", [TM]),
+      TM * 60;
     false ->
       % next run will be NOW
       error_logger:info_msg("fdsys_server: running a cycle immediately (but after ~p mins).~n", [WaitAtLeastMins]),
-      0
+      WaitAtLeastMins * 60
   end,
-  timer:send_after((WaitAtLeastMins * 60 + TimeoutS) * 1000, PID, cycle_nowcast),
+  timer:send_after(TimeoutS * 1000, PID, cycle_nowcast),
   ok.
 
 
@@ -96,7 +97,8 @@ execute_cycle(UrlPfix,AtGMT,SSel) ->
   {{Y,M,D},{H,_,_}} = AtGMT,
 
   % vars are set statically at this time
-  Vars = [temp,dewpoint,precip,wind_spd,wind_dir],
+  %Vars = [temp,dewpoint,precip,wind_spd,wind_dir],
+  Vars = [temp,dewpoint,precip],
 
   % phase 1: check if RTMA analysis is already available, if not, wait 60s and retry
   case rtma_retr:is_available(UrlPfix,H,Vars) of
@@ -126,16 +128,19 @@ execute_cycle(UrlPfix,AtGMT,SSel) ->
     ok ->
       % phase 3: run the fmda
       LogFile = lists:flatten(io_lib:format("fmncast-~4..0B~2..0B~2..0B-~2..0B00.log",[Y,M,D,H])),
-      error_logger:info_report(fdsys_util:fmt_text("fdsys_server: running fmncast.py for GMT time ~p", [AtGMT])),
-      os:cmd(io_lib:format("python psrc/fmncast.py ~s ~s state &> outputs/~s", [InDir0,InDir,LogFile])),
+      LogText = fdsys_util:fmt_text("fdsys_server: running fmncast.py for GMT time ~p", [AtGMT]),
+      error_logger:info_report(LogText),
+      Output = os:cmd(io_lib:format("python psrc/fmncast.py ~s ~s state", [InDir0,InDir])),
+      file:write_file("outputs/" ++ LogFile, Output),
       ok;
     Errors ->
       Errors
   end,
 
   % execute postprocessing step
-  LogFile2 = lists:flatten(io_lib:format("postproc-~4..0B~2..0B~2..0B-~2..0B00.log",[Y,M,D,H])),
-  os:cmd(io_lib:format("python psrc/postproc.py ~p ~p ~p ~p &> outputs/~s", [Y,M,D,H,LogFile2])),
+  LogFile2 = lists:flatten(io_lib:format("make_rasters-~4..0B~2..0B~2..0B-~2..0B00.log",[Y,M,D,H])),
+  Output2 = os:cmd(io_lib:format("python psrc/make_rasters.py state/fm-~4..0B~2..0B~2..0B-~2..0B00.nc", [Y,M,D,H])),
+  file:write_file("outputs/" ++ LogFile2, Output2),
 
   % log result
   error_logger:info_report(fdsys_util:fmt_text("fdsys_server: execute_cycle completed at GMT ~p with result ~p", [AtGMT,Result])),

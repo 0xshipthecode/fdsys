@@ -71,7 +71,7 @@ is_available(UrlPfix,RT,Vars) ->
       error_logger:info_report(logger_text("rtma_retr: analysis for RT ~p is ready with vars=~p.",[RT,Vars])),
       [];
     Ws ->
-      error_logger:info_report(logger_text("rtma_retr: analysis not ready for RT ~p, waiting on files ~w [vars=~w].", [RT,Ws,Vars])),
+      error_logger:info_report(logger_text("rtma_retr: analysis not ready for RT ~p, waiting on files ~p [vars=~w].", [RT,Ws,Vars])),
       Ws
   end.
 
@@ -85,12 +85,14 @@ check_file_time(UrlBase,V) ->
     {ok, {{_, 200, _}, Hdr, _}} ->
       case proplists:get_value("last-modified", Hdr, undefined) of
         undefined ->
+          error_logger:info_report(logger_text("rtma_retr: last-modified header missing for URL ~p.", [Url])),
           V;
         LM ->
           DT = parse_header_datetime(LM),
           Hsec = calendar:datetime_to_gregorian_seconds(DT),
-          % check if the last-modified is less than 24 hours ago
-          case Tsec - Hsec < 24*3600 of
+	  error_logger:info_report(logger_text("rtma_retr: now - last-modified is ~p seconds in the past for URL ~p.", [Tsec - Hsec, Url])),
+          % check if the last-modified is less than two hours ago [allow for delays]
+          case Tsec - Hsec < 2*3600 of
             true ->
               [];
             false ->
@@ -98,6 +100,7 @@ check_file_time(UrlBase,V) ->
           end
       end;
     _ ->
+      error_logger:info_report(logger_text("rtma_retr: HTTP request failed for URL ~p.", [Url])),
       V
   end.
 
