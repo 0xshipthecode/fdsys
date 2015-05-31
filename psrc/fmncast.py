@@ -36,7 +36,12 @@ def load_raws_observations(obs_file,glat,glon):
   and converts them to Observation objects.
   """
   # load observations & register them to grid
-  orig_obs = np.loadtxt(obs_file,delimiter=',')
+  orig_obs = []
+  if os.path.exists(obs_file):
+    orig_obs = np.loadtxt(obs_file,delimiter=',')
+  else:
+    print('WARN: no observation file found, only performing model time step.')
+
   obss = []
   omin, omax = 0.6, 0.0
   for oo in orig_obs:
