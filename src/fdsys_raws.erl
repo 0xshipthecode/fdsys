@@ -13,7 +13,14 @@ retrieve_and_write_obs(AtGMT,InDir,SSel) ->
   From = fdsys_util:shift_by_seconds({{Y,M,D},{H,0,0}}, -30 * 60),
   To = fdsys_util:shift_by_seconds({{Y,M,D},{H,0,0}}, 30 * 60),
   SSel1 = raws_ingest:resolve_station_selector(SSel),
-  Os = raws_ingest:retrieve_observations(SSel1,[fm10],{From,To}),
-  error_logger:info_report(fdsys_util:fmt_text("fdsys_raws: have ~p observations for ~p, writing to ~p", [length(Os),AtGMT,Path])),
-  raws_export:obs_to_csv(Os,Path),
-  ok.
+  case raws_ingest:retrieve_observations(SSel1,[fm10],{From,To}) of
+    Os when is_list(Os) ->
+      LogText = fdsys_util:fmt_text("fdsys_raws: have ~p observations for ~p, writing to ~p", [length(Os),AtGMT,Path]),
+      error_logger:info_report(LogText),
+      raws_export:obs_to_csv(Os,Path),
+      ok;
+    Err ->
+      ErrText = fdsys_util:fmt_text("fdsys_raws: failed to retrieve observations at time ~p with error ~p", [AtGMT, Err]),
+      error_logger:error_report(ErrText),
+      error
+  end.

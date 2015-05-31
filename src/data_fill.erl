@@ -59,9 +59,9 @@ download_rtma_if_needed(Y,M,D,H) ->
     true ->
       already_present;
     false ->
-      error_logger:info_msg("data_fill: need to download RTMA for ~p into ~p", [{{Y,M,D},{H,0,0}},Dir]),
+      error_logger:info_msg("rtma_fill: need to download RTMA for ~p into ~p", [{{Y,M,D},{H,0,0}},Dir]),
       rtma_retr:retrieve_archived({{Y,M,D},{H,0,0}},[dewpoint,temp,precip],Dir),
-      error_logger:info_msg("data_fill: downloaded RTMA for ~p", [{{Y,M,D},{H,0,0}}]),
+      error_logger:info_msg("rtma_fill: downloaded RTMA for ~p", [{{Y,M,D},{H,0,0}}]),
       downloaded
   end.
 
